@@ -1,0 +1,14 @@
+F:\uit\do_an_malware\ProcessHollowing\ProcessHollowing\ProcessHollowing\bin\x64\Release\net8.0\ProcessHollowing.exe
+F:\uit\do_an_malware\ProcessHollowing\ProcessHollowing\ProcessHollowing\bin\x64\Release\net8.0\ProcessHollowing.deps.json
+F:\uit\do_an_malware\ProcessHollowing\ProcessHollowing\ProcessHollowing\bin\x64\Release\net8.0\ProcessHollowing.runtimeconfig.json
+F:\uit\do_an_malware\ProcessHollowing\ProcessHollowing\ProcessHollowing\bin\x64\Release\net8.0\ProcessHollowing.dll
+F:\uit\do_an_malware\ProcessHollowing\ProcessHollowing\ProcessHollowing\bin\x64\Release\net8.0\ProcessHollowing.pdb
+F:\uit\do_an_malware\ProcessHollowing\ProcessHollowing\ProcessHollowing\obj\x64\Release\net8.0\ProcessHollowing.GeneratedMSBuildEditorConfig.editorconfig
+F:\uit\do_an_malware\ProcessHollowing\ProcessHollowing\ProcessHollowing\obj\x64\Release\net8.0\ProcessHollowing.AssemblyInfoInputs.cache
+F:\uit\do_an_malware\ProcessHollowing\ProcessHollowing\ProcessHollowing\obj\x64\Release\net8.0\ProcessHollowing.AssemblyInfo.cs
+F:\uit\do_an_malware\ProcessHollowing\ProcessHollowing\ProcessHollowing\obj\x64\Release\net8.0\ProcessHollowing.csproj.CoreCompileInputs.cache
+F:\uit\do_an_malware\ProcessHollowing\ProcessHollowing\ProcessHollowing\obj\x64\Release\net8.0\ProcessHollowing.dll
+F:\uit\do_an_malware\ProcessHollowing\ProcessHollowing\ProcessHollowing\obj\x64\Release\net8.0\refint\ProcessHollowing.dll
+F:\uit\do_an_malware\ProcessHollowing\ProcessHollowing\ProcessHollowing\obj\x64\Release\net8.0\ProcessHollowing.pdb
+F:\uit\do_an_malware\ProcessHollowing\ProcessHollowing\ProcessHollowing\obj\x64\Release\net8.0\ProcessHollowing.genruntimeconfig.cache
+F:\uit\do_an_malware\ProcessHollowing\ProcessHollowing\ProcessHollowing\obj\x64\Release\net8.0\ref\ProcessHollowing.dll
