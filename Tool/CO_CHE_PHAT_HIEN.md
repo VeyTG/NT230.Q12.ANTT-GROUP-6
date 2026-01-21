@@ -1,8 +1,160 @@
 # Cơ chế phát hiện Process Hollowing
 
+## Cơ chế hoạt động tổng thể
+
+### Phân loại phương pháp phát hiện
+
+Hệ thống sử dụng **phương pháp lai (Hybrid Analysis)** kết hợp cả static và dynamic analysis:
+
+#### 1. Static Analysis (Phân tích tĩnh)
+Phân tích PE file trên disk mà không thực thi, sử dụng thư viện `pefile`:
+- Đọc Import Table để lấy danh sách DLL được khai báo (expected modules)
+- Trích xuất Entry Point RVA (Relative Virtual Address) từ Optional Header
+- Lấy Image Base address mặc định
+- Thu thập thông tin sections (tên, virtual address, size, characteristics)
+- Tính hash MD5 cho từng section (để so sánh integrity)
+
+#### 2. Dynamic Analysis (Phân tích động)
+Phân tích process đang chạy trong memory thông qua Windows API:
+- **EnumProcessModules**: Liệt kê modules thực tế được load vào process space
+- **GetModuleFileNameExW**: Lấy đường dẫn đầy đủ của mỗi module
+- **GetModuleInformation**: Thu thập base address, size và entry point thực tế
+- **VirtualQueryEx**: Quét toàn bộ memory regions để phát hiện vùng executable không map từ file
+- **ReadProcessMemory**: Đọc nội dung memory (nếu cần verify section integrity)
+
+#### 3. Hybrid Analysis (Phân tích lai)
+So sánh dữ liệu từ static và dynamic analysis để phát hiện bất thường:
+- **Module comparison**: So sánh expected_dlls vs loaded_dlls
+- **Entry point verification**: So sánh entry point từ PE header vs entry point trong memory
+- **Memory anomaly detection**: Phát hiện executable regions không được map từ file (có thể là injected code)
+- **Section integrity check**: So sánh metadata sections giữa file và memory
+
+### Kiến trúc hệ thống
+
+Hệ thống được thiết kế theo kiến trúc module hóa với 4 tầng chính:
+
+1. **Tầng điều khiển** ([main.py](main.py)): Xử lý đầu vào, điều phối luồng thực thi và xuất kết quả
+2. **Tầng giám sát process** ([process_monitor.py](core/process_monitor.py)): Tương tác với Windows API để thu thập thông tin process và memory
+3. **Tầng phân tích** ([pe_analyzer.py](core/pe_analyzer.py), [module_comparator.py](core/module_comparator.py)): Phân tích PE file và so sánh với runtime state
+4. **Tầng phát hiện** ([detector.py](core/detector.py)): Đánh giá bất thường và phân loại nguy cơ
+
+### Sơ đồ hoạt động tổng quan
+
+```mermaid
+flowchart TD
+    Start([main.py<br/>Điểm khởi đầu]) --> CheckAdmin{Kiểm tra quyền<br/>Administrator}
+    CheckAdmin -->|Không| Exit([Thoát])
+    CheckAdmin -->|Có| Init[Khởi tạo components]
+    
+    Init --> Enum[ProcessMonitor<br/>Enumerate & Filter Processes]
+    
+    Enum --> Loop{Duyệt từng process}
+    Loop -->|Tiếp| Analyze[DetectionEngine<br/>Phân tích process]
+    Loop -->|Hết| Report[Reporter<br/>Báo cáo kết quả]
+    
+    Analyze --> Compare[ModuleComparator<br/>Thu thập & so sánh dữ liệu<br/>Static + Dynamic Analysis]
+    
+    Compare --> Score[Scoring System<br/>Tính toán risk score<br/>Phân loại nguy cơ]
+    
+    Score --> Save[Lưu kết quả]
+    Save --> Loop
+    
+    Report --> Export{Export JSON?}
+    Export -->|Có| JSON[Xuất file]
+    Export -->|Không| End([Kết thúc])
+    JSON --> End
+    Exit --> End
+
+    style Start fill:#e1f5e1
+    style End fill:#ffe1e1
+    style Exit fill:#ffe1e1
+    style CheckAdmin fill:#fff4e1
+    style Loop fill:#e1f0ff
+    style Export fill:#fff4e1
+    style Analyze fill:#e1f0ff
+    style Compare fill:#f0e1ff
+    style Score fill:#fff4e1
+```
+
+### Giải thích các giai đoạn chính
+
+**Giai đoạn 1: Khởi tạo và quét processes**
+- Kiểm tra quyền Administrator (bắt buộc để đọc process memory qua Windows API)
+- Khởi tạo ProcessMonitor và DetectionEngine
+- Enumerate processes bằng `psutil.process_iter()` và lọc theo điều kiện (PID, tên hoặc scan toàn bộ)
+
+**Giai đoạn 2: Thu thập dữ liệu (Hybrid Analysis)**
+- **Static Analysis** (PEAnalyzer): Parse PE file từ disk để lấy Import Table, Entry Point, Image Base và thông tin sections
+- **Dynamic Analysis** (ProcessMonitor): Đọc process memory qua Windows API (`EnumProcessModules`, `VirtualQueryEx`) để lấy modules và memory regions thực tế
+- Hai nguồn dữ liệu được thu thập song song và độc lập
+
+**Giai đoạn 3: So sánh và phát hiện bất thường (ModuleComparator)**
+
+Thực hiện 4 phép so sánh chính:
+
+1. **Module Comparison**: So sánh expected_dlls từ Import Table với loaded_dlls trong memory
+   - Tính missing_ratio và số lượng critical missing DLLs
+   - Ngưỡng: missing_ratio > 70% hoặc loaded_count < 2
+
+2. **Entry Point Check**: So sánh entry point giữa file và memory
+   - Tính offset_difference = |memory_entry - (memory_base + file_entry_point)|
+   - Ngưỡng: offset > 1MB (CRITICAL) hoặc > 320KB (HIGH)
+
+3. **Unmapped Executable Memory**: Phát hiện vùng executable không map từ file
+   - Lọc regions có quyền executable nhưng Type ≠ MEM_IMAGE
+   - Ngưỡng: count > 50 (HIGH) hoặc > 30 (MEDIUM)
+
+4. **Section Integrity**: So sánh metadata sections (số lượng, tên, virtual address)
+
+**Giai đoạn 4: Chấm điểm và phân loại (DetectionEngine)**
+- Mỗi bất thường được gán severity level (CRITICAL: 30, HIGH: 20, MEDIUM: 10, LOW: 5)
+- Tính tổng risk_score (0-100)
+- Kiểm tra process có trong whitelist không (trusted processes)
+- Áp dụng ngưỡng khác nhau:
+  - **Untrusted**: suspicious nếu score ≥ 40 hoặc critical_indicators ≥ 2
+  - **Trusted**: suspicious nếu score ≥ 60 hoặc critical_indicators ≥ 3
+
+**Giai đoạn 5: Báo cáo kết quả (Reporter)**
+- Hiển thị summary: thống kê tổng số processes, clean, suspicious, likely hollowed
+- In detailed report cho từng process suspicious với danh sách indicators
+- Export kết quả ra file JSON nếu có tham số --output
+
+### Hệ thống chấm điểm
+
+Mỗi bất thường được gán **severity level** và **weight score**:
+
+| Severity | Weight | Ý nghĩa |
+|----------|--------|---------|
+| CRITICAL | 30 | Dấu hiệu rõ ràng của hollowing |
+| HIGH | 20 | Bất thường nghiêm trọng |
+| MEDIUM | 10 | Bất thường trung bình |
+| LOW | 5 | Bất thường nhẹ |
+| INFO | 0 | Thông tin tham khảo |
+
+**Risk Score** = Tổng weight của các indicators phát hiện được (max 100)
+
+**Risk Level** được phân loại theo ngưỡng:
+- Score ≥ 50: **CRITICAL** - Very likely hollowed
+- Score ≥ 30: **HIGH** - Suspicious activity detected
+- Score ≥ 15: **MEDIUM** - Some anomalies detected
+- Score > 0: **LOW** - Minor anomalies
+- Score = 0: **CLEAN** - No suspicious activity
+
+### Cơ chế lọc False Positive
+
+Hệ thống áp dụng whitelist cho các **trusted processes** có behavior đặc biệt hợp lệ:
+- Ứng dụng Electron: `zalo.exe`, `code.exe`, `teams.exe`, `discord.exe`
+- Browsers: `chrome.exe`, `firefox.exe`, `msedge.exe`
+- Development tools: `devenv.exe`, `rider64.exe`, `webstorm64.exe`
+- Runtimes: `python.exe`, `node.exe`, `java.exe`
+
+Với trusted processes, ngưỡng phát hiện được nâng cao để giảm cảnh báo nhầm.
+
+---
+
 ## Tổng quan
 
-Tool sử dụng **4 cơ chế chính** để phát hiện process bị hollowing, dựa trên việc so sánh giữa **PE file trên disk** và **process trong memory**.
+Tool sử dụng **4 cơ chế phát hiện chính** dựa trên việc so sánh giữa **PE file trên disk** và **process trong memory**.
 
 ---
 
